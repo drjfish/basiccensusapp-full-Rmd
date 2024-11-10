@@ -1,0 +1,403 @@
+---
+title: "d4ph_censusAnalysis"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+
+# Load necessary libraries
+library(tidycensus)
+library(dplyr)
+library(tidyr)
+
+```
+
+```{r}
+
+# Set parameters
+# Set your Census API key
+census_api_key("YOUR_CENSUS_API_KEY") # Replace with your own Census API key
+
+# Define the year and survey type
+survey <- "acs1"
+# Define the years you want-pull data for
+years <- c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023)
+
+# Define the variables for total population, age, and sex brackets
+variables <- c(
+    "B01003_001", # Total population
+    "B01001_003", # Male: Under 5 years
+    "B01001_004", # Male: 5-9 years
+    "B01001_005", # Male: 10-14 years
+    "B01001_006", # Male: 15-17 years
+    "B01001_007", # Male: 18 and 19 years
+    "B01001_008", # Male: 20 years
+    "B01001_009", # Male: 21 years
+    "B01001_010", # Male: 22-24 years
+    "B01001_011", # Male: 25-29 years
+    "B01001_012", # Male: 30-34 years
+    "B01001_013", # Male: 35-39 years
+    "B01001_014", # Male: 40-44 years
+    "B01001_015", # Male: 45-49 years
+    "B01001_016", # Male: 50-54 years
+    "B01001_017", # Male: 55-59 years
+    "B01001_018", # Male: 60 and 61 years
+    "B01001_019", # Male: 62-64 years
+    "B01001_020", # Male: 65 and 66 years
+    "B01001_021", # Male: 67-69 years
+    "B01001_022", # Male: 70-74 years
+    "B01001_023", # Male: 75-79 years
+    "B01001_024", # Male: 80-84 years
+    "B01001_025", # Male: 85 years and over
+    "B01001_027", # Female: Under 5 years
+    "B01001_028", # Female: 5-9 years
+    "B01001_029", # Female: 10-14 years
+    "B01001_030", # Female: 15-17 years
+    "B01001_031", # Female: 18 and 19 years
+    "B01001_032", # Female: 20 years
+    "B01001_033", # Female: 21 years
+    "B01001_034", # Female: 22-24 years
+    "B01001_035", # Female: 25-29 years
+    "B01001_036", # Female: 30-34 years
+    "B01001_037", # Female: 35-39 years
+    "B01001_038", # Female: 40-44 years
+    "B01001_039", # Female: 45-49 years
+    "B01001_040", # Female: 50-54 years
+    "B01001_041", # Female: 55-59 years
+    "B01001_042", # Female: 60 and 61 years
+    "B01001_043", # Female: 62-64 years
+    "B01001_044", # Female: 65 and 66 years
+    "B01001_045", # Female: 67-69 years
+    "B01001_046", # Female: 70-74 years
+    "B01001_047", # Female: 75-79 years
+    "B01001_048", # Female: 80-84 years
+    "B01001_049" # Female: 85 years and over
+)
+```
+
+```{r}
+
+# Create function-get the data
+get_acs_data <- function(state, year, variables, survey) {
+    get_acs(
+        geography = ifelse(state == "US", "us", "state"),
+        variables = variables,
+        survey = survey,
+        state = ifelse(state == "US", NULL, state), # If state is "US", set state-NULL
+        year = year
+    )
+}
+
+# Load fips_codes data
+data(fips_codes, package = "tidycensus")
+
+# Create the list of desired states for output
+states <- unique(fips_codes$state)[01:51]
+states <- c(states, "US") # Add "US"-the list of states-get national totals
+
+# Pull data for each state and year in a tryCatch block-skip unavailable state-year combinations)
+acs_data <- lapply(states, function(state) {
+  lapply(years, function(year) {
+    tryCatch({
+      data <- get_acs_data(state, year, variables, survey)
+      data <- data %>% mutate(year = year) # Add year column-the data
+    }, error = function(e) {
+      message(paste("Skipping state", state, "year", year, "due-error:", e$message))
+      data.frame()
+    })
+  }) %>%
+  bind_rows()
+}) %>%
+bind_rows() # Combine the data into a single data frame
+
+```
+
+```{r}
+# Save data as csv file
+write.csv(acs_data, file = "raw_acs_data.csv")
+```
+
+```{r}
+
+# Load the raw_acs_data.csv file as a dataframe (separate code chunk to avoid re-running data pull)
+acs_data <- read.csv("raw_acs_data.csv")
+
+# Add sex column-the data
+sex_map <- list(
+  Male = c("B01001_003", "B01001_004", "B01001_005",
+           "B01001_006", "B01001_007", "B01001_008", "B01001_009",
+           "B01001_010", "B01001_011", "B01001_012", "B01001_013",
+           "B01001_014", "B01001_015", "B01001_016", "B01001_017",
+           "B01001_018", "B01001_019", "B01001_020", "B01001_021",
+           "B01001_022", "B01001_023", "B01001_024", "B01001_025"),
+  Female = c("B01001_027", "B01001_028", "B01001_029",
+             "B01001_030", "B01001_031", "B01001_032", "B01001_033",
+             "B01001_034", "B01001_035", "B01001_036", "B01001_037",
+             "B01001_038", "B01001_039", "B01001_040", "B01001_041",
+             "B01001_042", "B01001_043", "B01001_044", "B01001_045",
+             "B01001_046", "B01001_047", "B01001_048", "B01001_049")
+)
+
+age_map <- list(
+  "B01003_001" = "total",
+  "B01001_003" = "00-04",
+  "B01001_004" = "05-09",
+  "B01001_005" = "10-14",
+  "B01001_006" = "15-17",
+  "B01001_007" = "18-19",
+  "B01001_008" = "20",
+  "B01001_009" = "21",
+  "B01001_010" = "22-24",
+  "B01001_011" = "25-29",
+  "B01001_012" = "30-34",
+  "B01001_013" = "35-39",
+  "B01001_014" = "40-44",
+  "B01001_015" = "45-49",
+  "B01001_016" = "50-54",
+  "B01001_017" = "55-59",
+  "B01001_018" = "60-61",
+  "B01001_019" = "62-64",
+  "B01001_020" = "65-66",
+  "B01001_021" = "67-69",
+  "B01001_022" = "70-74",
+  "B01001_023" = "75-79",
+  "B01001_024" = "80-84",
+  "B01001_025" = "85+",
+  "B01001_027" = "00-04",
+  "B01001_028" = "05-09",
+  "B01001_029" = "10-14",
+  "B01001_030" = "15-17",
+  "B01001_031" = "18-19",
+  "B01001_032" = "20",
+  "B01001_033" = "21",
+  "B01001_034" = "22-24",
+  "B01001_035" = "25-29",
+  "B01001_036" = "30-34",
+  "B01001_037" = "35-39",
+  "B01001_038" = "40-44",
+  "B01001_039" = "45-49",
+  "B01001_040" = "50-54",
+  "B01001_041" = "55-59",
+  "B01001_042" = "60-61",
+  "B01001_043" = "62-64",
+  "B01001_044" = "65-66",
+  "B01001_045" = "67-69",
+  "B01001_046" = "70-74",
+  "B01001_047" = "75-79",
+  "B01001_048" = "80-84",
+  "B01001_049" = "85+"
+)
+
+# Add the 'sex' column based on the variable values
+acs_data <- acs_data %>%
+  mutate(sex = case_when(
+    variable %in% sex_map$Male ~ "M",
+    variable %in% sex_map$Female ~ "F",
+    TRUE ~ NA_character_
+  ))
+
+# Add the age column-acs_data based on the age_map
+acs_data$age <- sapply(acs_data$variable, function(v) age_map[[v]])
+
+# Rename GEOID column to st_fips
+acs_data <- acs_data %>% rename(st_fips = GEOID)
+
+# Rename NAME column to state
+acs_data <- acs_data %>% rename(state = NAME)
+
+# Drop variable column
+acs_data <- acs_data %>%
+  select(-variable, -X)
+
+# View the updated acs_data
+head(acs_data)
+```
+
+```{r}
+
+# Save processed acs_data as .csv file (for future sessions)
+
+# Ensure all columns are atomic vectors
+write.csv(acs_data, file = "acs_data.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+# Load required libraries
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(webshot2)
+library(htmlwidgets)
+
+# Load the dataset
+acs_data <- read.csv("acs_data.csv")
+
+# Determine the latest year (e.g., 2023) as the default value
+default_year <- max(acs_data$year, na.rm = TRUE)
+
+# Define the UI for the app
+ui <- fluidPage(
+  tags$head(
+    tags$style(HTML("
+      .sidebar-panel .shiny-input-container {
+        width: 100% !important;
+      }
+      .sidebar-panel .btn {
+        width: 100% !important;
+        font-size: 0.85em;
+      }
+    "))
+  ),
+  titlePanel("State Population Estimates"),
+  
+  # Define the tabset for National and State views
+  tabsetPanel(
+    tabPanel("National",
+      sidebarLayout(
+        sidebarPanel(
+          class = "sidebar-panel",
+          selectInput("selected_year", 
+                      "Select Year:", 
+                      choices = unique(acs_data$year),
+                      selected = default_year),
+          br(), br(),
+          downloadButton("download_national", "Grab Data"),
+          br(), # Line break for spacing
+          actionButton("screenshot_national", "Screenshot Plot"),
+          width = 2
+        ),
+        mainPanel(
+          plotlyOutput("populationPlot")
+        )
+      )
+    ),
+    tabPanel("State",
+      sidebarLayout(
+        sidebarPanel(
+          class = "sidebar-panel",
+          selectInput("selected_state", 
+                      "Select State:", 
+                      choices = unique(acs_data$state)),
+          selectInput("selected_year_state",
+                      "Select Year:", 
+                      choices = unique(acs_data$year),
+                      selected = default_year),
+          br(), br(),
+          downloadButton("download_state", "Grab Data"),
+          br(), # Line break for spacing
+          actionButton("screenshot_state", "Screenshot Plot"),
+          width = 2
+        ),
+        mainPanel(
+          plotlyOutput("statePlot")
+        )
+      )
+    )
+  )
+)
+
+# Define server logic for the app
+server <- function(input, output, session) {
+  
+  # Generate Plotly object for the National tab
+  national_plot <- reactive({
+    filtered_data <- acs_data %>%
+      filter(year == input$selected_year, age == "total") %>%
+      arrange(desc(estimate))
+    
+    ggplot(filtered_data, aes(x = reorder(state, -estimate), y = estimate, 
+                              text = paste("State:", state, "<br>Estimate:", scales::comma(estimate)))) +
+      geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+      scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = "M")) + # Format y-axis in millions
+      labs(x = "State", y = "Population Estimate", 
+           title = paste("Population Estimates for", input$selected_year)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+  
+  # Render the National Plotly plot
+  output$populationPlot <- renderPlotly({
+    ggplotly(national_plot(), tooltip = "text") %>%
+      layout(hoverlabel = list(bgcolor = "white", bordercolor = "black"))
+  })
+  
+  # Generate Plotly object for the State tab
+  state_plot <- reactive({
+    filtered_data <- acs_data %>%
+      filter(state == input$selected_state, year == input$selected_year_state, age != "total") %>%
+      arrange(age)
+    
+    ggplot(filtered_data, aes(x = age, y = estimate, fill = sex, 
+                              text = paste("Age Range:", age, "<br>Sex:", sex, "<br>Estimate:", scales::comma(estimate)))) +
+      geom_bar(stat = "identity", position = "stack", color = "black") + # Use stacked bars
+      scale_fill_manual(values = c("M" = "blue", "F" = "orange")) + # Set colors for male and female
+      scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = "M")) + # Format y-axis in millions
+      labs(x = "Age Range", y = "Population Estimate", 
+           title = paste("Population Estimates by Age and Sex for", input$selected_state, "in", input$selected_year_state)) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  })
+  
+  # Render the State Plotly plot
+  output$statePlot <- renderPlotly({
+    ggplotly(state_plot(), tooltip = "text") %>%
+      layout(hoverlabel = list(bgcolor = "white", bordercolor = "black"))
+  })
+  
+  # Download handler for National data
+  output$download_national <- downloadHandler(
+    filename = function() {
+      paste("National_Population_Data_", input$selected_year, ".csv", sep = "")
+    },
+    content = function(file) {
+      filtered_data <- acs_data %>%
+        filter(year == input$selected_year, age == "total") %>%
+        arrange(desc(estimate))
+      write.csv(filtered_data, file, row.names = FALSE)
+    }
+  )
+  
+  # Download handler for State data
+  output$download_state <- downloadHandler(
+    filename = function() {
+      paste("State_Population_Data_", input$selected_state, "_", input$selected_year_state, ".csv", sep = "")
+    },
+    content = function(file) {
+      filtered_data <- acs_data %>%
+        filter(state == input$selected_state, year == input$selected_year_state, age != "total") %>%
+        arrange(age)
+      write.csv(filtered_data, file, row.names = FALSE)
+    }
+  )
+  
+  # Screenshot handler for National tab using webshot2
+  observeEvent(input$screenshot_national, {
+    # Save the national plot as an HTML widget
+    widget <- saveWidget(as_widget(ggplotly(national_plot())), "national_plot.html", selfcontained = TRUE)
+    webshot2::webshot("national_plot.html", file = paste("National_Population_Plot_", input$selected_year, ".png", sep = ""))
+  })
+  
+  # Screenshot handler for State tab using webshot2
+  observeEvent(input$screenshot_state, {
+    # Save the state plot as an HTML widget
+    widget <- saveWidget(as_widget(ggplotly(state_plot())), "state_plot.html", selfcontained = TRUE)
+    webshot2::webshot("state_plot.html", file = paste("State_Population_Plot_", input$selected_state, "_", input$selected_year_state, ".png", sep = ""))
+  })
+}
+
+# Run the app
+shinyApp(ui = ui, server = server)
+
+
+```
+
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K*-preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
